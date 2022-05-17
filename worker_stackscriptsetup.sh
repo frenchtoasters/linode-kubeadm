@@ -6,12 +6,7 @@ curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" >/etc/apt/sources.list.d/kubernetes.list
 apt-get update
 apt-get install -y docker.io kubeadm kubectl
+hostnamectl set-hostname ${name}
 
 # Run kubeadm
-kubeadm join ${cluster_ip}:6443 \
-  --token ${token} \
-  --discovery-token-unsafe-skip-ca-verification \
-  --node-name ${name}
-
-# Indicate completion of bootstrapping on this node
-touch /home/ubuntu/done
+${join_command} --node-name ${name}

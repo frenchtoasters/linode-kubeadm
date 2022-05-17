@@ -24,7 +24,7 @@ locals {
   session_name     = "lintoast-remote"
   token            = "${random_string.token_id.result}.${random_string.token_secret.result}"
   bootstrap        = true
-  masters          = 3
+  masters          = 2
   workers          = 3
   pod_network_cidr = "10.0.1.0/16"
 }
@@ -208,11 +208,9 @@ resource "linode_stackscript" "worker_stackscript" {
 
   script = templatefile("${path.module}/worker_stackscriptsetup.sh",
     {
-      token      = local.token,
-      cluster_ip = linode_nodebalancer.workspace_lb.ipv4,
-      name       = "worker-${count.index}",
-      cert_key   = var.certificate_key,
-      sha256_key = sha256(var.certificate_key)
+      cluster_ip   = linode_nodebalancer.workspace_lb.ipv4,
+      name         = "worker-${count.index}",
+      join_command = data.remote_file.kubeadmjoin.content
     }
   )
 }
