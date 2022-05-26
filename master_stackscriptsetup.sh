@@ -35,5 +35,3 @@ hostnamectl set-hostname ${name}
 
 # Run kubeadm
 ${join_command} --control-plane --certificate-key ${cert_key} --node-name ${name}
-
-kubectl --kubeconfig /etcd/kubernetes/admin.conf config set-cluster kubernetes --server https://${cluster_ip}:6443

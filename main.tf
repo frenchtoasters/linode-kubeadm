@@ -24,7 +24,7 @@ locals {
   session_name     = "lintoast-remote"
   token            = "${random_string.token_id.result}.${random_string.token_secret.result}"
   bootstrap        = true
-  masters          = 2
+  masters          = 3
   workers          = 3
   pod_network_cidr = "10.0.1.0/16"
   crio_version     = "1.23"
@@ -119,6 +119,7 @@ resource "null_resource" "bootstrap_config" {
       "systemctl start crio",
       "systemctl enable crio",
       "ufw allow 6443",
+      "hostnamectl set-hostname bootstrap",
       "kubeadm init --token ${local.token} --token-ttl 15m --upload-certs --certificate-key ${var.certificate_key} --apiserver-cert-extra-sans ${linode_nodebalancer.kubectl_lb.ipv4} --node-name bootstrap --control-plane-endpoint ${linode_nodebalancer.kubectl_lb.ipv4}:6443",
       "sleep 120s",
       "kubectl --kubeconfig /etc/kubernetes/admin.conf config set-cluster kubernetes --server https://${linode_nodebalancer.kubectl_lb.ipv4}:6443",
@@ -134,6 +135,29 @@ resource "null_resource" "bootstrap_config" {
   ]
 }
 
+resource "null_resource" "kubeadm_join" {
+  triggers = {
+    primary_change = linode_instance.bootstrap.ip_address
+    more_masters   = local.masters
+    more_workers   = local.workers
+  }
+
+  connection {
+    host        = linode_instance.bootstrap.ip_address
+    type        = "ssh"
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "kubeadm init phase upload-certs --upload-certs",
+      "kubeadm token create --print-join-command > /root/kubeadmjoin",
+      "truncate -s -1 /root/kubeadmjoin"
+    ]
+  }
+}
+
 data "remote_file" "kubeadmjoin" {
   conn {
     host        = linode_instance.bootstrap.ip_address
@@ -145,7 +169,8 @@ data "remote_file" "kubeadmjoin" {
   path = "/root/kubeadmjoin"
 
   depends_on = [
-    null_resource.bootstrap_config
+    null_resource.bootstrap_config,
+    null_resource.kubeadm_join
   ]
 }
 
@@ -187,6 +212,9 @@ resource "linode_stackscript" "master_stackscript" {
   )
   images   = ["linode/ubuntu20.04", "linode/ubuntu21.10"]
   rev_note = "initial terraform version"
+  depends_on = [
+    null_resource.kubeadm_join
+  ]
 }
 
 resource "linode_instance" "master" {
@@ -241,6 +269,10 @@ resource "linode_stackscript" "worker_stackscript" {
       crio_version = local.crio_version
     }
   )
+  depends_on = [
+    null_resource.kubeadm_join
+  ]
+
 }
 
 resource "linode_instance" "worker" {
