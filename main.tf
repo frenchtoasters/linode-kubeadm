@@ -156,6 +156,9 @@ resource "null_resource" "kubeadm_join" {
       "truncate -s -1 /root/kubeadmjoin"
     ]
   }
+  depends_on = [
+    null_resource.bootstrap_config
+  ]
 }
 
 data "remote_file" "kubeadmjoin" {
