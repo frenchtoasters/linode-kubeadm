@@ -135,15 +135,19 @@ resource "null_resource" "bootstrap_config" {
   ]
 }
 
+resource "random_integer" "random_node_id" {
+  min = 0
+  max = length(local.masters) - 1
+}
+
 resource "null_resource" "kubeadm_join" {
   triggers = {
-    primary_change = linode_instance.bootstrap.ip_address
-    more_masters   = local.masters
-    more_workers   = local.workers
+    more_masters = local.masters
+    more_workers = local.workers
   }
 
   connection {
-    host        = linode_instance.bootstrap.ip_address
+    host        = linode_instance.master[random_integer.random_node_id.result].ip_address
     type        = "ssh"
     user        = "root"
     private_key = var.ssh_private_key
@@ -157,13 +161,15 @@ resource "null_resource" "kubeadm_join" {
     ]
   }
   depends_on = [
+    linode_instance.master,
+    linode_instance.bootstrap,
     null_resource.bootstrap_config
   ]
 }
 
 data "remote_file" "kubeadmjoin" {
   conn {
-    host        = linode_instance.bootstrap.ip_address
+    host        = linode_instance.master[random_integer.random_node_id.result].ip_address
     port        = 22
     user        = "root"
     private_key = var.ssh_private_key
@@ -173,13 +179,14 @@ data "remote_file" "kubeadmjoin" {
 
   depends_on = [
     null_resource.bootstrap_config,
-    null_resource.kubeadm_join
+    null_resource.kubeadm_join,
+    linode_instance.master
   ]
 }
 
 data "remote_file" "admin_kubeconfig" {
   conn {
-    host        = linode_instance.bootstrap.ip_address
+    host        = linode_instance.master[random_integer.random_node_id.result].ip_address
     port        = 22
     user        = "root"
     private_key = var.ssh_private_key
@@ -188,7 +195,9 @@ data "remote_file" "admin_kubeconfig" {
   path = "/etc/kubernetes/admin.conf"
 
   depends_on = [
-    null_resource.bootstrap_config
+    null_resource.bootstrap_config,
+    linode_instance.bootstrap,
+    linode_instance.master
   ]
 }
 
@@ -216,7 +225,10 @@ resource "linode_stackscript" "master_stackscript" {
   images   = ["linode/ubuntu20.04", "linode/ubuntu21.10"]
   rev_note = "initial terraform version"
   depends_on = [
-    null_resource.kubeadm_join
+    remote_file.kubeadmjoin,
+    null_resource.kubeadm_join,
+    linode_instance.bootstrap,
+    null_resource.bootstrap_config
   ]
 }
 
@@ -252,7 +264,8 @@ resource "linode_instance" "master" {
 
   depends_on = [
     linode_instance.bootstrap,
-    null_resource.bootstrap_config
+    null_resource.bootstrap_config,
+    linode_stackscript.master_stackscript
   ]
 }
 
